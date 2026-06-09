@@ -1,0 +1,460 @@
+{
+  "address": "HGFn2fH7bVQ5cSuiG52NjzN9m11YrB3FZUfoN9b9A5jf",
+  "metadata": {
+    "name": "stealth_announcer",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Stealth Address Announcer for Opaque Protocol on Solana"
+  },
+  "docs": [
+    "Stealth Address Announcer — emits Announcement events when something is sent",
+    "to a stealth address. Equivalent to ERC-5564 on Ethereum.",
+    "One deployment per cluster so scanners can subscribe to a single log source.",
+    "",
+    "schemeId 1 = secp256k1 with view tags. metadata[0] = view tag byte;",
+    "remaining bytes can carry encrypted payment IDs or attestation data."
+  ],
+  "instructions": [
+    {
+      "name": "announce",
+      "docs": [
+        "Emit an announcement so the recipient's scanner can detect the transfer.",
+        "",
+        "* `scheme_id` — Stealth scheme (1 = secp256k1).",
+        "* `stealth_address` — The one-time stealth address (as 20-byte Ethereum-compatible",
+        "address or 32-byte Solana pubkey, stored as bytes for cross-chain flexibility).",
+        "* `ephemeral_pub_key` — Compressed secp256k1 ephemeral public key (33 bytes).",
+        "* `metadata` — First byte MUST be the view tag; rest is optional."
+      ],
+      "discriminator": [
+        7,
+        30,
+        100,
+        250,
+        110,
+        253,
+        3,
+        149
+      ],
+      "accounts": [
+        {
+          "name": "caller",
+          "writable": true,
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "scheme_id",
+          "type": "u64"
+        },
+        {
+          "name": "stealth_address",
+          "type": "bytes"
+        },
+        {
+          "name": "ephemeral_pub_key",
+          "type": "bytes"
+        },
+        {
+          "name": "metadata",
+          "type": "bytes"
+        }
+      ]
+    },
+    {
+      "name": "announce_with_log",
+      "docs": [
+        "Announce with an on-chain log record for indexing.",
+        "Creates a small PDA so indexers can use getProgramAccounts queries",
+        "in addition to parsing transaction logs.",
+        "",
+        "`log_id` — unique 32-byte id for this log PDA (e.g. random bytes or a hash of payload + nonce)."
+      ],
+      "discriminator": [
+        6,
+        56,
+        231,
+        53,
+        83,
+        33,
+        135,
+        17
+      ],
+      "accounts": [
+        {
+          "name": "announcement_log",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  110,
+                  110,
+                  111,
+                  117,
+                  110,
+                  99,
+                  101,
+                  109,
+                  101,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "caller"
+              },
+              {
+                "kind": "arg",
+                "path": "log_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "caller",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "scheme_id",
+          "type": "u64"
+        },
+        {
+          "name": "stealth_address",
+          "type": "bytes"
+        },
+        {
+          "name": "ephemeral_pub_key",
+          "type": "bytes"
+        },
+        {
+          "name": "metadata",
+          "type": "bytes"
+        },
+        {
+          "name": "log_id",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "announce_with_relay",
+      "docs": [
+        "Announce locally AND relay the announcement cross-chain via Wormhole.",
+        "",
+        "Emits the standard `Announcement` (so Solana scanners still see it) and publishes the",
+        "96-byte cross-chain payload (spec/payload-format.md) through the Wormhole Core Contract.",
+        "`batch_id` is the Wormhole nonce; `wormhole_fee` is the current `messageFee` (0 on",
+        "devnet) transferred to the fee collector before posting."
+      ],
+      "discriminator": [
+        3,
+        242,
+        201,
+        249,
+        200,
+        171,
+        146,
+        79
+      ],
+      "accounts": [
+        {
+          "name": "caller",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "wormhole_emitter",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  109,
+                  105,
+                  116,
+                  116,
+                  101,
+                  114
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "wormhole_config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  66,
+                  114,
+                  105,
+                  100,
+                  103,
+                  101
+                ]
+              }
+            ],
+            "program": {
+              "kind": "account",
+              "path": "wormhole_program"
+            }
+          }
+        },
+        {
+          "name": "wormhole_fee_collector",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  101,
+                  101,
+                  95,
+                  99,
+                  111,
+                  108,
+                  108,
+                  101,
+                  99,
+                  116,
+                  111,
+                  114
+                ]
+              }
+            ],
+            "program": {
+              "kind": "account",
+              "path": "wormhole_program"
+            }
+          }
+        },
+        {
+          "name": "wormhole_sequence",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  83,
+                  101,
+                  113,
+                  117,
+                  101,
+                  110,
+                  99,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "wormhole_emitter"
+              }
+            ],
+            "program": {
+              "kind": "account",
+              "path": "wormhole_program"
+            }
+          }
+        },
+        {
+          "name": "wormhole_message",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "wormhole_program",
+          "address": "3u8hJUVTA4jH1wYAyUur7FFZVQ8H635K3tSHHF4ssjQ5"
+        },
+        {
+          "name": "clock",
+          "address": "SysvarC1ock11111111111111111111111111111111"
+        },
+        {
+          "name": "rent",
+          "address": "SysvarRent111111111111111111111111111111111"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "scheme_id",
+          "type": "u64"
+        },
+        {
+          "name": "stealth_address",
+          "type": "bytes"
+        },
+        {
+          "name": "ephemeral_pub_key",
+          "type": "bytes"
+        },
+        {
+          "name": "metadata",
+          "type": "bytes"
+        },
+        {
+          "name": "batch_id",
+          "type": "u32"
+        },
+        {
+          "name": "wormhole_fee",
+          "type": "u64"
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "AnnouncementLog",
+      "discriminator": [
+        176,
+        179,
+        30,
+        81,
+        93,
+        152,
+        35,
+        230
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "Announcement",
+      "discriminator": [
+        7,
+        44,
+        132,
+        71,
+        104,
+        35,
+        168,
+        60
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "InvalidEphemeralKey",
+      "msg": "Ephemeral public key must be exactly 33 bytes (compressed secp256k1)"
+    },
+    {
+      "code": 6001,
+      "name": "MetadataMissingViewTag",
+      "msg": "Metadata must contain at least the view tag byte"
+    },
+    {
+      "code": 6002,
+      "name": "InvalidStealthAddress",
+      "msg": "Stealth address must be 1..=32 bytes"
+    },
+    {
+      "code": 6003,
+      "name": "MetadataTooLong",
+      "msg": "Metadata exceeds the 24-byte cross-chain payload budget"
+    }
+  ],
+  "types": [
+    {
+      "name": "Announcement",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "scheme_id",
+            "type": "u64"
+          },
+          {
+            "name": "stealth_address",
+            "type": "bytes"
+          },
+          {
+            "name": "caller",
+            "type": "pubkey"
+          },
+          {
+            "name": "ephemeral_pub_key",
+            "type": "bytes"
+          },
+          {
+            "name": "metadata",
+            "type": "bytes"
+          }
+        ]
+      }
+    },
+    {
+      "name": "AnnouncementLog",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "scheme_id",
+            "type": "u64"
+          },
+          {
+            "name": "stealth_address",
+            "type": "bytes"
+          },
+          {
+            "name": "caller",
+            "type": "pubkey"
+          },
+          {
+            "name": "ephemeral_pub_key",
+            "type": "bytes"
+          },
+          {
+            "name": "metadata",
+            "type": "bytes"
+          },
+          {
+            "name": "slot",
+            "type": "u64"
+          },
+          {
+            "name": "log_id",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    }
+  ]
+}

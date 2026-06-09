@@ -1,0 +1,382 @@
+{
+  "address": "7d4Sbmmpy954JwSNdjwf31pgbeWUQqwpgNdte5iy3vuM",
+  "metadata": {
+    "name": "uab_receiver",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Universal Announcement Bus receiver for Opaque Protocol on Solana"
+  },
+  "instructions": [
+    {
+      "name": "initialize",
+      "docs": [
+        "Create the config that pins the trusted cross-chain sender."
+      ],
+      "discriminator": [
+        175,
+        175,
+        109,
+        31,
+        13,
+        152,
+        155,
+        237
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "admin",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "source_chain",
+          "type": "u16"
+        },
+        {
+          "name": "source_emitter",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "receive_announcement",
+      "docs": [
+        "Verify a posted VAA from the trusted source emitter and re-emit its payload locally."
+      ],
+      "discriminator": [
+        122,
+        44,
+        93,
+        7,
+        159,
+        208,
+        52,
+        125
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "posted_vaa"
+        },
+        {
+          "name": "processed",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  99,
+                  101,
+                  115,
+                  115,
+                  101,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "posted_vaa"
+              }
+            ]
+          }
+        },
+        {
+          "name": "relayer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "set_source_emitter",
+      "docs": [
+        "Update the trusted source emitter (admin only)."
+      ],
+      "discriminator": [
+        195,
+        230,
+        133,
+        102,
+        249,
+        94,
+        234,
+        102
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "admin",
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "source_chain",
+          "type": "u16"
+        },
+        {
+          "name": "source_emitter",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "Config",
+      "discriminator": [
+        155,
+        12,
+        170,
+        224,
+        30,
+        250,
+        204,
+        130
+      ]
+    },
+    {
+      "name": "Processed",
+      "discriminator": [
+        118,
+        236,
+        99,
+        117,
+        190,
+        115,
+        171,
+        26
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "CrossChainAnnouncement",
+      "discriminator": [
+        13,
+        87,
+        101,
+        171,
+        128,
+        65,
+        106,
+        220
+      ]
+    },
+    {
+      "name": "SourceEmitterUpdated",
+      "discriminator": [
+        150,
+        223,
+        184,
+        15,
+        236,
+        143,
+        5,
+        244
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "NotWormholeOwned",
+      "msg": "Posted VAA account is not owned by the Wormhole core bridge"
+    },
+    {
+      "code": 6001,
+      "name": "NotPostedVaa",
+      "msg": "Account is not a posted VAA"
+    },
+    {
+      "code": 6002,
+      "name": "MalformedVaa",
+      "msg": "Malformed VAA account data"
+    },
+    {
+      "code": 6003,
+      "name": "UnknownEmitter",
+      "msg": "VAA is not from the configured source emitter"
+    },
+    {
+      "code": 6004,
+      "name": "BadPayloadLength",
+      "msg": "Payload is not the expected 96-byte UAB body"
+    }
+  ],
+  "types": [
+    {
+      "name": "Config",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "admin",
+            "type": "pubkey"
+          },
+          {
+            "name": "source_chain",
+            "type": "u16"
+          },
+          {
+            "name": "source_emitter",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "CrossChainAnnouncement",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "source_chain",
+            "type": "u16"
+          },
+          {
+            "name": "source_emitter",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "sequence",
+            "type": "u64"
+          },
+          {
+            "name": "payload",
+            "type": "bytes"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Processed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "SourceEmitterUpdated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "source_chain",
+            "type": "u16"
+          },
+          {
+            "name": "source_emitter",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
