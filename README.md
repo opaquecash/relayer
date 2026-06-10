@@ -1,5 +1,7 @@
 # Opaque UAB Relay
 
+[![CI](https://github.com/opaquecash/relayer/actions/workflows/relayer-test.yml/badge.svg)](https://github.com/opaquecash/relayer/actions/workflows/relayer-test.yml)
+
 Off-chain relay for the **Universal Announcement Bus** (UAB): it fetches the Wormhole VAA for a
 cross-chain stealth announcement and delivers it to the destination chain's receiver. Wormhole's
 automatic relayer is EVM-only, so any leg touching Solana is delivered here. The relay is
