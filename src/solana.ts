@@ -24,6 +24,40 @@ export function solCtx() {
   return { connection, payer, wallet, provider, uabReceiver, stealthAnnouncer };
 }
 
+/**
+ * Send a transaction and confirm by polling getSignatureStatuses over HTTP.
+ * sendAndConfirmTransaction needs a websocket signatureSubscribe, which several
+ * RPC providers (e.g. Alchemy devnet) do not offer.
+ */
+export async function sendAndPoll(
+  connection: Connection,
+  tx: Transaction,
+  signers: Keypair[],
+  timeoutMs = 90_000,
+): Promise<string> {
+  const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
+  tx.recentBlockhash = blockhash;
+  tx.lastValidBlockHeight = lastValidBlockHeight;
+  tx.feePayer = signers[0]!.publicKey;
+  tx.sign(...signers);
+  const signature = await connection.sendRawTransaction(tx.serialize(), {
+    skipPreflight: false,
+  });
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const st = (await connection.getSignatureStatuses([signature])).value[0];
+    if (st?.err) throw new Error(`transaction failed: ${JSON.stringify(st.err)} (${signature})`);
+    if (
+      st?.confirmationStatus === "confirmed" ||
+      st?.confirmationStatus === "finalized"
+    ) {
+      return signature;
+    }
+    if (Date.now() > deadline) throw new Error(`confirmation timeout: ${signature}`);
+    await new Promise((r) => setTimeout(r, 1_500));
+  }
+}
+
 /** The 32-byte Wormhole emitter (the stealth-announcer's emitter PDA). */
 export function solanaEmitter(): PublicKey {
   return coreUtils.deriveWormholeEmitterKey(SOL.stealthAnnouncer);
@@ -128,12 +162,12 @@ export async function postVaaToSolana(vaaBytes: Uint8Array): Promise<PublicKey> 
   );
   for (let i = 0; i < verifyIxs.length; i += 2) {
     const tx = new Transaction().add(...verifyIxs.slice(i, i + 2));
-    await sendAndConfirmTransaction(connection, tx, [payer, signatureSet]);
+    await sendAndPoll(connection, tx, [payer, signatureSet]);
   }
   const postTx = new Transaction().add(
     coreUtils.createPostVaaInstruction(connection, core, payer.publicKey, vaa as any, signatureSet.publicKey),
   );
-  await sendAndConfirmTransaction(connection, postTx, [payer]);
+  await sendAndPoll(connection, postTx, [payer]);
   return postedVaaKey;
 }
 

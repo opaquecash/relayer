@@ -17,6 +17,7 @@ export const ETH = {
   wormholeCore: "0x4a8bc80Ed5a4067f1CCf107057b8270E0cC11A78",
   uabSender: "0x872787c0BD1A0C71e6D1be5a144EB044e0CB2069",
   uabReceiver: "0x9eF189f7a263F870Cf80f9A89d1349A6AF7b15cF",
+  onsRegistry: "0xf2fc0166e992654DC9c9AB82e9d5Af9A88C01483",
   whChain: WH_CHAIN.ethereum,
 } as const;
 
@@ -25,6 +26,8 @@ export const SOL = {
   wormholeCore: "3u8hJUVTA4jH1wYAyUur7FFZVQ8H635K3tSHHF4ssjQ5",
   stealthAnnouncer: "HGFn2fH7bVQ5cSuiG52NjzN9m11YrB3FZUfoN9b9A5jf",
   uabReceiver: "7d4Sbmmpy954JwSNdjwf31pgbeWUQqwpgNdte5iy3vuM",
+  onsMirror: "D7EXuwcsGrUAYC6k69jrKvsKethsKYgR1pokkTcFvWsk",
+  onsRegistration: "5gfK9J8FJi3FpsQD33Hkrfwq8KqN4yadB2PDF9REnwMT",
   whChain: WH_CHAIN.solana,
 } as const;
 
