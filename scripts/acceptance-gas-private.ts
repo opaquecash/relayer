@@ -35,7 +35,7 @@ import {
   postPayload,
   type Bid,
   type RegistryReaders,
-} from "../../sdk/packages/relayer-client/dist/index.js";
+} from "@opaquecash/relayer-client";
 
 const RPC = "http://127.0.0.1:8545";
 const REGISTRY = "0x5fA252e2D22058a4ec3420573a3B3A5dca025837" as Address;
