@@ -1,12 +1,32 @@
-# Opaque UAB Relay
+# Opaque Relayer
 
 [![CI](https://github.com/opaquecash/relayer/actions/workflows/relayer-test.yml/badge.svg)](https://github.com/opaquecash/relayer/actions/workflows/relayer-test.yml)
+
+This repo hosts two things:
+
+- **`rust/` — `opaque-relayer`**, the permissionless node for the gas-private submission
+  market (spec [`relayer-market.md`](https://github.com/opaquecash/spec/blob/main/relayer-market.md)).
+  This is the Phase 5 successor and the supported way to run a relayer. See
+  [`rust/README.md`](./rust/README.md).
+- **The legacy TypeScript UAB/ONS delivery scripts** (this directory), kept for reference
+  and as the current Wormhole VAA delivery path until the keeper duty (below) lands in the
+  node.
+
+**VAA delivery migration status:** the relayer-market spec assigns UAB/ONS VAA delivery to
+the node as a fee-less keeper duty (`relayer-market.md` §4.4). That keeper loop (watch
+Wormholescan for the Opaque emitters, post + deliver signed VAAs) is the next increment on
+`opaque-relayer`; until it ships, the TypeScript scripts here remain the delivery path and
+are **not yet decommissioned**. The market itself (gas-private submission) is live and
+acceptance-tested.
+
+---
+
+## Legacy UAB/ONS delivery (TypeScript)
 
 Off-chain relay for the **Universal Announcement Bus** (UAB): it fetches the Wormhole VAA for a
 cross-chain stealth announcement and delivers it to the destination chain's receiver. Wormhole's
 automatic relayer is EVM-only, so any leg touching Solana is delivered here. The relay is
-**liveness-only** — it cannot forge or alter a VAA (guardian-signed), only deliver it. Phase 4
-replaces this single process with a permissionless market.
+**liveness-only** — it cannot forge or alter a VAA (guardian-signed), only deliver it.
 
 Spec: [`spec/UAB.md`](https://github.com/opaquecash/spec/blob/main/UAB.md) ·
 payload: [`spec/payload-format.md`](https://github.com/opaquecash/spec/blob/main/payload-format.md).
