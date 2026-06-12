@@ -17,7 +17,7 @@ export const ETH = {
   wormholeCore: "0x4a8bc80Ed5a4067f1CCf107057b8270E0cC11A78",
   uabSender: "0x872787c0BD1A0C71e6D1be5a144EB044e0CB2069",
   uabReceiver: "0x9eF189f7a263F870Cf80f9A89d1349A6AF7b15cF",
-  onsRegistry: "0xf2fc0166e992654DC9c9AB82e9d5Af9A88C01483",
+  onsRegistry: "0x6e18a2faaa929848a3377C28Cf250795E20Fce02",
   whChain: WH_CHAIN.ethereum,
 } as const;
 
