@@ -16,8 +16,12 @@ use crate::job::{Bid, Message};
 
 #[derive(Clone)]
 pub struct GatewayState {
-    /// Publish raw JSON bytes to the gossip mesh.
-    pub publish: mpsc::Sender<Vec<u8>>,
+    /// Re-gossip received messages to peer nodes.
+    pub gossip: mpsc::Sender<Vec<u8>>,
+    /// Feed received messages to THIS node's handler too (gossipsub never delivers a
+    /// message back to its own publisher, so without this a node would ignore jobs
+    /// submitted to its own gateway).
+    pub local: mpsc::Sender<Vec<u8>>,
     /// Bids seen per job id (served back to polling users).
     pub bids: Arc<Mutex<HashMap<String, Vec<Bid>>>>,
 }
@@ -41,7 +45,9 @@ pub fn record_bid(bids: &Arc<Mutex<HashMap<String, Vec<Bid>>>>, bid: Bid) {
 }
 
 async fn post_job(State(s): State<GatewayState>, Json(advert): Json<Value>) -> Json<Value> {
-    let _ = s.publish.send(serde_json::to_vec(&advert).unwrap_or_default()).await;
+    let bytes = serde_json::to_vec(&advert).unwrap_or_default();
+    let _ = s.local.send(bytes.clone()).await;
+    let _ = s.gossip.send(bytes).await;
     Json(serde_json::json!({ "ok": true }))
 }
 
@@ -58,7 +64,9 @@ async fn post_payload(
     Path(_job_id): Path<String>,
     Json(envelope): Json<Value>,
 ) -> Json<Value> {
-    let _ = s.publish.send(serde_json::to_vec(&envelope).unwrap_or_default()).await;
+    let bytes = serde_json::to_vec(&envelope).unwrap_or_default();
+    let _ = s.local.send(bytes.clone()).await;
+    let _ = s.gossip.send(bytes).await;
     Json(serde_json::json!({ "ok": true }))
 }
 

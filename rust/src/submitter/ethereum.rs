@@ -62,6 +62,7 @@ impl EthereumSubmitter {
 macro_rules! contract {
     ($self:expr) => {{
         let provider = ProviderBuilder::new()
+            .with_recommended_fillers()
             .wallet(EthereumWallet::from($self.signer.clone()))
             .on_http($self.rpc.parse().expect("valid eth rpc url"));
         RelayerRegistry::new($self.registry, provider)

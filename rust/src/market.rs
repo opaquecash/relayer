@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 
 use crate::crypto::BoxIdentity;
-use crate::gateway::{publish_message, record_bid, GatewayState};
+use crate::gateway::{publish_message, record_bid};
 use crate::job::{bid_signing_hash, parse_hex32, Advert, Bid, Message, PayloadEnvelope};
 use crate::submitter::Submitter;
 
@@ -43,10 +43,6 @@ impl Node {
 
     fn submitter_for(&self, chain: u16) -> Option<&dyn Submitter> {
         self.submitters.iter().find(|s| s.chain() == chain).map(|s| s.as_ref())
-    }
-
-    pub fn gateway_state(&self) -> GatewayState {
-        GatewayState { publish: self.publish.clone(), bids: self.bids.clone() }
     }
 
     /// Dispatch one inbound gossip payload.
@@ -113,6 +109,9 @@ impl Node {
         };
         self.job_chain.lock().unwrap().insert(a.job_id.clone(), a.chain);
         tracing::info!("bidding on job {} (chain {})", a.job_id, a.chain);
+        // Serve our own bid on this node's gateway too: gossipsub does not deliver a
+        // message back to its publisher, so without this our gateway would never list it.
+        record_bid(&self.bids, bid.clone());
         publish_message(&self.publish, &Message::Bid(bid)).await;
     }
 

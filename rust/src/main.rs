@@ -132,7 +132,7 @@ async fn main() -> Result<()> {
             let bids = Arc::new(Mutex::new(HashMap::new()));
             let (inbound_tx, mut inbound_rx) = mpsc::channel::<Vec<u8>>(256);
 
-            let p2p = p2p::start(listen, peer, inbound_tx).await?;
+            let p2p = p2p::start(listen, peer, inbound_tx.clone()).await?;
             let node = Arc::new(market::Node::new(
                 submitters,
                 box_id.clone(),
@@ -141,7 +141,11 @@ async fn main() -> Result<()> {
                 bids.clone(),
             ));
 
-            let app = gateway::router(node.gateway_state());
+            let app = gateway::router(gateway::GatewayState {
+                gossip: p2p.outbound.clone(),
+                local: inbound_tx.clone(),
+                bids: bids.clone(),
+            });
             let addr: std::net::SocketAddr = gateway.parse()?;
             tokio::spawn(async move {
                 let listener = tokio::net::TcpListener::bind(addr).await.expect("bind gateway");
