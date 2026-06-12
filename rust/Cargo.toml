@@ -2,8 +2,13 @@
 name = "opaque-relayer"
 version = "0.1.0"
 edition = "2021"
-description = "Permissionless relayer node for the Opaque gas-private submission market (spec/relayer-market.md)"
+description = "Permissionless relayer node for the Opaque gas-private submission market: encrypted job intake, sealed-bid auctions over gossipsub, and Ethereum/Solana submission"
 license = "GPL-3.0"
+repository = "https://github.com/opaquecash/relayer"
+homepage = "https://opaque.cash"
+readme = "README.md"
+keywords = ["relayer", "privacy", "stealth-address", "ethereum", "solana"]
+categories = ["cryptography::cryptocurrencies", "command-line-utilities"]
 
 [[bin]]
 name = "opaque-relayer"
