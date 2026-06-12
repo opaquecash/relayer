@@ -1,0 +1,46 @@
+[package]
+name = "opaque-relayer"
+version = "0.1.0"
+edition = "2021"
+description = "Permissionless relayer node for the Opaque gas-private submission market (spec/relayer-market.md)"
+license = "GPL-3.0"
+
+[[bin]]
+name = "opaque-relayer"
+path = "src/main.rs"
+
+[dependencies]
+# Async runtime + CLI
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time", "signal"] }
+clap = { version = "4", features = ["derive", "env"] }
+anyhow = "1"
+async-trait = "0.1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Serialization + encoding
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+hex = "0.4"
+bs58 = "0.5"
+base64 = "0.22"
+
+# Crypto: payload hashing, bid signing (EVM secp256k1 + Solana ed25519), NaCl box
+sha3 = "0.10"
+k256 = { version = "0.13", features = ["ecdsa"] }
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+crypto_box = { version = "0.9", features = ["std"] }
+rand = "0.8"
+
+# P2P + HTTP gateway
+libp2p = { version = "0.54", features = ["tokio", "gossipsub", "tcp", "noise", "yamux", "macros", "identify"] }
+axum = "0.7"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+
+# Chain submitters
+alloy = { version = "0.8", features = ["providers", "signer-local", "contract", "network", "rpc-types-eth", "reqwest", "reqwest-rustls-tls"] }
+solana-client = "2"
+solana-sdk = "2"
+
+[features]
+default = []
