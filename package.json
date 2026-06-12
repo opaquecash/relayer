@@ -7,6 +7,8 @@
   "license": "AGPL-3.0",
   "scripts": {
     "setup": "tsx scripts/setup.ts",
+    "keeper": "tsx scripts/keeper.ts",
+    "keeper:once": "tsx scripts/keeper.ts --once",
     "e2e:sol-to-eth": "tsx scripts/e2e-sol-to-eth.ts",
     "e2e:eth-to-sol": "tsx scripts/e2e-eth-to-sol.ts",
     "typecheck": "tsc --noEmit"

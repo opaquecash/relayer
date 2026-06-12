@@ -13,11 +13,25 @@ This repo hosts two things:
   node.
 
 **VAA delivery migration status:** the relayer-market spec assigns UAB/ONS VAA delivery to
-the node as a fee-less keeper duty (`relayer-market.md` §4.4). That keeper loop (watch
-Wormholescan for the Opaque emitters, post + deliver signed VAAs) is the next increment on
-`opaque-relayer`; until it ships, the TypeScript scripts here remain the delivery path and
-are **not yet decommissioned**. The market itself (gas-private submission) is live and
-acceptance-tested.
+the node as a fee-less keeper duty (`relayer-market.md` §4.4). A TypeScript keeper loop now
+implements that duty here (see below); porting it into `opaque-relayer` is the remaining
+increment. The market itself (gas-private submission) is live and acceptance-tested.
+
+## VAA-delivery keeper (auto-relay)
+
+`npm run keeper` watches Wormholescan for all four Opaque emitters and delivers every
+guardian-signed, not-yet-consumed VAA — ONS claims (Solana → Sepolia `registerFromVAA`),
+ONS mirrors (Sepolia → `ons-mirror.receive_record`), and UAB announcements in both
+directions. Idempotency comes from on-chain state (the receivers' `consumed` mappings and
+`processed` PDAs), so the keeper is stateless and safe to restart or run twice.
+
+```bash
+npm run keeper        # loop forever (KEEPER_INTERVAL_MS, default 30s)
+npm run keeper:once   # single pass
+```
+
+Without a running keeper, Solana-originated ONS claims and announcements never reach
+Ethereum (Wormhole's automatic relayer is EVM-only) — they sit signed but undelivered.
 
 ---
 
