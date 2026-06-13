@@ -15,7 +15,7 @@
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.30.1",
-    "@opaquecash/relayer-client": "^0.2.0",
+    "@opaquecash/relayer-client": "^0.2.1",
     "@solana/web3.js": "^1.95.4",
     "@wormhole-foundation/sdk": "^1.13.0",
     "@wormhole-foundation/sdk-evm": "^1.13.0",
