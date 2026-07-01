@@ -163,6 +163,14 @@ impl Submitter for EthereumSubmitter {
             .on_http(self.rpc.parse().map_err(|e| anyhow!("bad eth rpc url: {e}"))?);
         let tx = TransactionRequest::default().with_to(to).with_input(calldata);
         let receipt = provider.send_transaction(tx).await?.get_receipt().await?;
+        // A mined-but-reverted sweep still yields a receipt; report it as a failure so
+        // callers never treat a reverted consolidation step as landed.
+        if !receipt.status() {
+            return Err(anyhow!(
+                "sweep reverted on-chain (tx {:?})",
+                receipt.transaction_hash
+            ));
+        }
         Ok(format!("{:?}", receipt.transaction_hash))
     }
 
