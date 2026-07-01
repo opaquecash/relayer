@@ -1,16 +1,17 @@
 //! Ethereum submitter (alloy): reads the job, accepts (bonds), and submits the
 //! revealed `abi.encode(target, calldata)` payload to `RelayerRegistry`.
 
-use alloy::network::EthereumWallet;
+use alloy::network::{EthereumWallet, TransactionBuilder};
 use alloy::primitives::{Address, Bytes, FixedBytes, U256};
-use alloy::providers::ProviderBuilder;
+use alloy::providers::{Provider, ProviderBuilder};
+use alloy::rpc::types::TransactionRequest;
 use alloy::signers::local::PrivateKeySigner;
 use alloy::sol;
 use alloy::sol_types::SolValue;
 use anyhow::{anyhow, Result};
 use std::str::FromStr;
 
-use super::{OnchainJob, Submitter};
+use super::{OnchainJob, Submitter, SweepRequest};
 use crate::job::CHAIN_ETHEREUM;
 
 sol! {
@@ -38,22 +39,34 @@ pub struct EthereumSubmitter {
     signer: PrivateKeySigner,
     key_bytes: [u8; 32],
     rpc: String,
+    /// Allowed `StealthTokenSweep` forwarder for gasless sweeps; when set, a sweep
+    /// whose `to` differs is rejected so the relayer can only call the vetted contract.
+    forwarder: Option<Address>,
 }
 
 impl EthereumSubmitter {
-    pub fn new(rpc: &str, registry: &str, key_hex: &str) -> Result<Self> {
+    pub fn new(
+        rpc: &str,
+        registry: &str,
+        key_hex: &str,
+        forwarder: Option<&str>,
+    ) -> Result<Self> {
         let key_bytes: [u8; 32] = hex::decode(key_hex.trim_start_matches("0x"))?
             .try_into()
             .map_err(|_| anyhow!("eth key must be 32 bytes"))?;
         let signer = PrivateKeySigner::from_bytes(&key_bytes.into())?;
+        let forwarder = match forwarder {
+            Some(f) if !f.is_empty() => Some(Address::from_str(f.trim())?),
+            _ => None,
+        };
         Ok(Self {
             registry: Address::from_str(registry)?,
             signer,
             key_bytes,
             rpc: rpc.to_string(),
+            forwarder,
         })
     }
-
 }
 
 /// Build the wallet-filled HTTP provider + contract instance. A macro (not a fn) so
@@ -125,5 +138,39 @@ impl Submitter for EthereumSubmitter {
         c.acceptJob(id).send().await?.watch().await?;
         let receipt = c.submitJob(id, target, data).send().await?.get_receipt().await?;
         Ok(format!("{:?}", receipt.transaction_hash))
+    }
+
+    async fn submit_sweep(&self, req: &SweepRequest) -> Result<String> {
+        let (to, data) = match req {
+            SweepRequest::Ethereum { to, data } => (to, data),
+            _ => return Err(anyhow!("ethereum submitter received a non-ethereum sweep")),
+        };
+        let to = Address::from_str(to.trim())?;
+        if let Some(fwd) = self.forwarder {
+            if to != fwd {
+                return Err(anyhow!(
+                    "sweep target {to:?} is not the configured forwarder {fwd:?}"
+                ));
+            }
+        }
+        let calldata = Bytes::from(hex::decode(data.trim_start_matches("0x"))?);
+
+        // Raw forwarder call: the owner-signed authorization is inside `calldata`; the
+        // forwarder verifies it and pays us `fee` in-token. We supply gas (value 0).
+        let provider = ProviderBuilder::new()
+            .with_recommended_fillers()
+            .wallet(EthereumWallet::from(self.signer.clone()))
+            .on_http(self.rpc.parse().map_err(|e| anyhow!("bad eth rpc url: {e}"))?);
+        let tx = TransactionRequest::default().with_to(to).with_input(calldata);
+        let receipt = provider.send_transaction(tx).await?.get_receipt().await?;
+        Ok(format!("{:?}", receipt.transaction_hash))
+    }
+
+    fn sweep_info(&self) -> serde_json::Value {
+        serde_json::json!({
+            "chain": self.chain(),
+            "operator": self.operator(),
+            "forwarder": self.forwarder.map(|f| format!("{f:?}")),
+        })
     }
 }

@@ -13,6 +13,8 @@ pub const TOPIC: &str = "opaque/jobs/v1";
 pub const SEPOLIA_RELAYER_REGISTRY: &str = "0x5fA252e2D22058a4ec3420573a3B3A5dca025837";
 /// Testnet `relayer-registry` program on Solana devnet.
 pub const DEVNET_RELAYER_REGISTRY: &str = "E4xmYaAU31dbNTbhfMfp2F24b48DAxJigvZTVbsKJREg";
+/// Testnet `StealthTokenSweep` forwarder on Ethereum Sepolia (fee-in-token gasless sweep, §9).
+pub const SEPOLIA_STEALTH_TOKEN_SWEEP: &str = "0xdb8103231c8b2488Faf00427Cb1241bbe62A1410";
 
 #[derive(Clone)]
 pub struct Config {

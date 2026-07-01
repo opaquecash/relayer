@@ -14,7 +14,7 @@ use crate::job::{bid_signing_hash, parse_hex32, Advert, Bid, Message, PayloadEnv
 use crate::submitter::Submitter;
 
 pub struct Node {
-    pub submitters: Vec<Box<dyn Submitter>>,
+    pub submitters: Arc<Vec<Box<dyn Submitter>>>,
     pub box_id: Arc<BoxIdentity>,
     pub min_fee: u128,
     pub publish: mpsc::Sender<Vec<u8>>,
@@ -25,7 +25,7 @@ pub struct Node {
 
 impl Node {
     pub fn new(
-        submitters: Vec<Box<dyn Submitter>>,
+        submitters: Arc<Vec<Box<dyn Submitter>>>,
         box_id: Arc<BoxIdentity>,
         min_fee: u128,
         publish: mpsc::Sender<Vec<u8>>,

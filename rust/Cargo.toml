@@ -29,6 +29,7 @@ serde_json = "1"
 hex = "0.4"
 bs58 = "0.5"
 base64 = "0.22"
+bincode = "1"
 
 # Crypto: payload hashing, bid signing (EVM secp256k1 + Solana ed25519), NaCl box
 sha3 = "0.10"

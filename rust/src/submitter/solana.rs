@@ -6,6 +6,7 @@
 //! (is_signer is always false — committed as such in the hash, spec §2.3.)
 
 use anyhow::{anyhow, Result};
+use base64::Engine as _;
 use solana_client::rpc_client::RpcClient;
 use solana_sdk::{
     commitment_config::CommitmentConfig,
@@ -18,8 +19,17 @@ use solana_sdk::{
 use std::str::FromStr;
 use std::sync::Arc;
 
-use super::{OnchainJob, Submitter};
+use super::{OnchainJob, Submitter, SweepRequest};
 use crate::job::{solana_payload_hash, SolAccountMeta, CHAIN_SOLANA};
+
+/// Programs a gasless sweep is allowed to touch, so co-signing as fee payer can only ever
+/// pay for a bounded set of token moves — never an arbitrary (expensive) transaction.
+const SWEEP_ALLOWED_PROGRAMS: [&str; 4] = [
+    "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA", // SPL Token
+    "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb", // SPL Token-2022
+    "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL", // Associated Token Account
+    "ComputeBudget111111111111111111111111111111", // Compute budget (fee/limit hints)
+];
 
 /// Anchor global instruction discriminator: `sha256("global:<name>")[..8]`.
 fn disc(name: &str) -> [u8; 8] {
@@ -236,6 +246,56 @@ impl Submitter for SolanaSubmitter {
             let submit_tx =
                 Transaction::new_signed_with_payer(&[submit_ix], Some(&operator), &[&*keypair], bh2);
             Ok(rpc.send_and_confirm_transaction(&submit_tx)?.to_string())
+        })
+        .await??;
+        Ok(sig)
+    }
+
+    async fn submit_sweep(&self, req: &SweepRequest) -> Result<String> {
+        let b64 = match req {
+            SweepRequest::Solana { transaction_base64 } => transaction_base64,
+            _ => return Err(anyhow!("solana submitter received a non-solana sweep")),
+        };
+        let raw = base64::engine::general_purpose::STANDARD.decode(b64.trim())?;
+        let mut tx: Transaction =
+            bincode::deserialize(&raw).map_err(|e| anyhow!("not a solana transaction: {e}"))?;
+
+        // The relayer must be the fee payer (account_keys[0]); otherwise co-signing is pointless.
+        let me = self.keypair.pubkey();
+        let fee_payer = *tx
+            .message
+            .account_keys
+            .first()
+            .ok_or_else(|| anyhow!("sweep transaction has no accounts"))?;
+        if fee_payer != me {
+            return Err(anyhow!("relayer {me} is not the fee payer of this sweep"));
+        }
+
+        // Bound our gas exposure: a sweep may only touch known token programs, never an
+        // arbitrary program that could run up compute the relayer pays for.
+        let allowed: Vec<Pubkey> = SWEEP_ALLOWED_PROGRAMS
+            .iter()
+            .map(|p| Pubkey::from_str(p).unwrap())
+            .collect();
+        for ix in &tx.message.instructions {
+            let pid = *tx
+                .message
+                .account_keys
+                .get(ix.program_id_index as usize)
+                .ok_or_else(|| anyhow!("instruction references an out-of-range program"))?;
+            if !allowed.contains(&pid) {
+                return Err(anyhow!("sweep contains a disallowed program {pid}"));
+            }
+        }
+
+        // Co-sign as fee payer over the SAME message the stealth key already signed (do not
+        // touch the blockhash, or that signature would be invalidated) and broadcast.
+        let keypair = self.keypair.clone();
+        let rpc = self.client();
+        let sig = tokio::task::spawn_blocking(move || -> Result<String> {
+            let bh = tx.message.recent_blockhash;
+            tx.try_partial_sign(&[&*keypair], bh)?;
+            Ok(rpc.send_and_confirm_transaction(&tx)?.to_string())
         })
         .await??;
         Ok(sig)

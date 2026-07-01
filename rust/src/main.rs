@@ -21,7 +21,7 @@ use anyhow::{anyhow, Result};
 use clap::{Parser, Subcommand};
 use tokio::sync::mpsc;
 
-use config::{DEVNET_RELAYER_REGISTRY, SEPOLIA_RELAYER_REGISTRY};
+use config::{DEVNET_RELAYER_REGISTRY, SEPOLIA_RELAYER_REGISTRY, SEPOLIA_STEALTH_TOKEN_SWEEP};
 use crypto::BoxIdentity;
 use submitter::{ethereum::EthereumSubmitter, solana::SolanaSubmitter, Submitter};
 
@@ -45,6 +45,10 @@ struct Cli {
     /// Solana operator keypair path. Enables the Solana chain.
     #[arg(long, env = "SOL_KEYPAIR")]
     sol_keypair: Option<std::path::PathBuf>,
+    /// `StealthTokenSweep` forwarder gasless sweeps may call (EVM). Defaults to the Sepolia
+    /// deployment; set empty to allow any target.
+    #[arg(long, env = "ETH_FORWARDER", default_value = SEPOLIA_STEALTH_TOKEN_SWEEP)]
+    eth_forwarder: String,
 }
 
 #[derive(Subcommand)]
@@ -75,7 +79,12 @@ enum Command {
 fn build_submitters(cli: &Cli) -> Result<Vec<Box<dyn Submitter>>> {
     let mut subs: Vec<Box<dyn Submitter>> = Vec::new();
     if let Some(key) = &cli.eth_key {
-        subs.push(Box::new(EthereumSubmitter::new(&cli.eth_rpc, &cli.eth_registry, key)?));
+        subs.push(Box::new(EthereumSubmitter::new(
+            &cli.eth_rpc,
+            &cli.eth_registry,
+            key,
+            Some(&cli.eth_forwarder),
+        )?));
     }
     if let Some(path) = &cli.sol_keypair {
         let bytes = config::read_solana_keypair(path)?;
@@ -113,12 +122,12 @@ async fn main() -> Result<()> {
         .init();
 
     let cli = Cli::parse();
-    let submitters = build_submitters(&cli)?;
+    let submitters = Arc::new(build_submitters(&cli)?);
     let box_id = Arc::new(box_identity(&cli)?);
 
     match &cli.command {
         Command::Register { stake, endpoint } => {
-            for s in &submitters {
+            for s in submitters.iter() {
                 let tx = s.register(&box_id.public, endpoint, *stake).await?;
                 println!(
                     "registered on chain {} (box {}): {tx}",
@@ -134,7 +143,7 @@ async fn main() -> Result<()> {
 
             let p2p = p2p::start(listen, peer, inbound_tx.clone()).await?;
             let node = Arc::new(market::Node::new(
-                submitters,
+                submitters.clone(),
                 box_id.clone(),
                 min_fee,
                 p2p.outbound.clone(),
@@ -145,6 +154,7 @@ async fn main() -> Result<()> {
                 gossip: p2p.outbound.clone(),
                 local: inbound_tx.clone(),
                 bids: bids.clone(),
+                submitters: submitters.clone(),
             });
             let addr: std::net::SocketAddr = gateway.parse()?;
             tokio::spawn(async move {
