@@ -60,7 +60,40 @@ For clients without a libp2p stack (browsers, the SDK):
 | `POST` | `/v1/jobs` | an advert JSON; re-gossiped to the mesh |
 | `GET` | `/v1/jobs/{jobId}/bids` | bids the node has seen for the job |
 | `POST` | `/v1/jobs/{jobId}/payload` | a payload envelope JSON; re-gossiped |
+| `POST` | `/v1/sweep` | a gasless-sweep submission (see below) → `{ ok, tx }` |
+| `GET` | `/v1/sweep/info` | per-chain operator + EVM forwarder the client builds against |
 | `GET` | `/v1/health` | `ok` |
+
+## Gasless token sweep (fee-in-token)
+
+A one-time stealth address that received an ERC-20/SPL payment holds the token but no
+native gas, so it cannot move it. `POST /v1/sweep` lets the node submit an owner-signed
+sweep, front the gas, and be reimbursed the fee **in that token**
+([`relayer-market.md` §9](https://github.com/opaquecash/spec/blob/main/relayer-market.md)).
+This is **escrow-free and outside the job market** — no advert, bid, or payload delivery,
+just a single synchronous submit. The authorization is self-contained: destination, amount,
+and fee are all signed by the stealth key, so the node can only execute exactly what was
+authorized or nothing.
+
+Clients build the request with `OpaqueClient.buildGaslessTokenSweep(...)` and post it via
+`@opaquecash/relayer-client`'s `postGaslessSweep(gateway, gaslessSweepSubmission(sweep))`.
+
+Request body (discriminated by `chain`):
+
+```jsonc
+// EVM: forwarder call. `data` is the owner-signed sweepWithPermit calldata.
+{ "chain": "ethereum", "to": "0x<StealthTokenSweep>", "data": "0x…" }
+// Solana: a tx the stealth key already partially signed, relayer is fee payer.
+{ "chain": "solana", "transactionBase64": "…" }
+```
+
+Guards: EVM sweeps must target the configured `--eth-forwarder`
+(`ETH_FORWARDER`, default the Sepolia `StealthTokenSweep`
+`0xdb8103231c8b2488Faf00427Cb1241bbe62A1410`); Solana sweeps must name this node as fee
+payer and may only touch the SPL Token / Token-2022 / Associated-Token / Compute-Budget
+programs, bounding the gas the node can be asked to front. The node fronts gas regardless
+of whether the in-token fee covers it, so operators SHOULD only expose `/v1/sweep` for
+tokens whose fee they price above their gas cost.
 
 ## Layout
 
