@@ -6,7 +6,8 @@ This repo hosts two things:
 
 - **`rust/` — `opaque-relayer`**, the permissionless node for the gas-private submission
   market (spec [`relayer-market.md`](https://github.com/opaquecash/spec/blob/main/relayer-market.md)).
-  This is the Phase 5 successor and the supported way to run a relayer. See
+  It also serves fee-in-token **gasless token sweeps** on `POST /v1/sweep` (spec §9,
+  escrow-free). This is the Phase 5 successor and the supported way to run a relayer. See
   [`rust/README.md`](./rust/README.md).
 - **The legacy TypeScript UAB/ONS delivery scripts** (this directory), kept for reference
   and as the current Wormhole VAA delivery path until the keeper duty (below) lands in the
