@@ -177,7 +177,7 @@ async function main() {
       return r[4] as Hex;
     },
   };
-  const verified = await verifyBids(bids, fee, readers);
+  const verified = await verifyBids(bids, fee, readers, { jobId: prepared.jobId, chain: 2 });
   console.log(`${verified.length} verified bid(s)`);
   const winner = selectWinner(verified, () => 0.5);
   if (!winner) throw new Error("no valid winner");
@@ -185,7 +185,7 @@ async function main() {
 
   // Deliver the sealed payload to the winner's gateway.
   const winnerGw = winner.bid.operator.toLowerCase() === opA.toLowerCase() ? gwA : gwB;
-  const envelope = buildPayloadEnvelope(winner.bid, { chain: 2, target: ANNOUNCER, calldata });
+  const envelope = buildPayloadEnvelope(winner.bid, prepared.jobId, { chain: 2, target: ANNOUNCER, calldata });
   await postPayload(winnerGw, envelope);
   console.log("payload delivered to winner gateway");
 
