@@ -65,6 +65,35 @@ impl SolanaSubmitter {
     }
 }
 
+/// `Job` account layout: 8 disc, job_id[32]@8, creator[32]@40, relayer[32]@72, fee u64@104,
+/// payload_hash[32]@112, deadline i64@144, submitted@152, closed@153 — 154 bytes total.
+const JOB_ACCOUNT_LEN: usize = 154;
+
+fn job_not_found() -> OnchainJob {
+    OnchainJob { exists: false, accepted: false, closed: false, fee: 0, deadline: 0, payload_hash: [0u8; 32] }
+}
+
+/// Decode a `Job` account, or `exists:false` if it is not one of OUR program's Job accounts.
+///
+/// A third party can pre-create the off-curve job PDA as a 0-data System-owned account just by
+/// sending it lamports; the previous code sliced the data unconditionally and would panic on
+/// that account, aborting the worker task and silently halting the node (OPQ-010). Validating
+/// the owner and length first makes a malformed/foreign account a benign "not found".
+fn parse_job(owner: &Pubkey, data: &[u8], program: &Pubkey) -> OnchainJob {
+    if owner != program || data.len() < JOB_ACCOUNT_LEN {
+        return job_not_found();
+    }
+    let relayer = Pubkey::new_from_array(data[72..104].try_into().unwrap());
+    OnchainJob {
+        exists: true,
+        accepted: relayer != Pubkey::default(),
+        closed: data[153] != 0,
+        fee: u64::from_le_bytes(data[104..112].try_into().unwrap()) as u128,
+        deadline: i64::from_le_bytes(data[144..152].try_into().unwrap()) as u64,
+        payload_hash: data[112..144].try_into().unwrap(),
+    }
+}
+
 /// Parse the box plaintext into an inner `Instruction` and its hash-preimage metas.
 fn decode_descriptor(payload: &[u8]) -> Result<(Instruction, Vec<SolAccountMeta>)> {
     if payload.len() < 36 {
@@ -168,30 +197,9 @@ impl Submitter for SolanaSubmitter {
         let pda = self.job_pda(job_id);
         let rpc = self.client();
         let maybe = tokio::task::spawn_blocking(move || rpc.get_account(&pda)).await?;
-        let account = match maybe {
-            Ok(a) => a,
-            Err(_) => {
-                return Ok(OnchainJob {
-                    exists: false,
-                    accepted: false,
-                    closed: false,
-                    fee: 0,
-                    deadline: 0,
-                    payload_hash: [0u8; 32],
-                })
-            }
-        };
-        let d = &account.data;
-        // 8 disc, job_id[32]@8, creator[32]@40, relayer[32]@72, fee u64@104,
-        // payload_hash[32]@112, deadline i64@144, submitted@152, closed@153.
-        let relayer = Pubkey::new_from_array(d[72..104].try_into().unwrap());
-        Ok(OnchainJob {
-            exists: true,
-            accepted: relayer != Pubkey::default(),
-            closed: d[153] != 0,
-            fee: u64::from_le_bytes(d[104..112].try_into().unwrap()) as u128,
-            deadline: i64::from_le_bytes(d[144..152].try_into().unwrap()) as u64,
-            payload_hash: d[112..144].try_into().unwrap(),
+        Ok(match maybe {
+            Ok(a) => parse_job(&a.owner, &a.data, &self.program),
+            Err(_) => job_not_found(),
         })
     }
 
@@ -356,5 +364,19 @@ mod tests {
     fn truncated_descriptor_is_rejected() {
         let payload = encode_descriptor([3u8; 32], &[([1u8; 32], true)], &[1, 2, 3]);
         assert!(decode_descriptor(&payload[..payload.len() - 1]).is_err());
+    }
+
+    /// A foreign or 0-data account at the job PDA parses as "not found" instead of panicking,
+    /// so a griefer who pre-creates the PDA cannot crash the worker (OPQ-010).
+    #[test]
+    fn parse_job_rejects_foreign_or_short_accounts_without_panicking() {
+        let program = Pubkey::new_unique();
+        let other = Pubkey::new_unique();
+        let full = vec![0u8; JOB_ACCOUNT_LEN];
+
+        assert!(!parse_job(&other, &full, &program).exists); // wrong owner
+        assert!(!parse_job(&program, &[], &program).exists); // 0-data System-style account
+        assert!(!parse_job(&program, &full[..JOB_ACCOUNT_LEN - 1], &program).exists); // too short
+        assert!(parse_job(&program, &full, &program).exists); // well-formed
     }
 }
