@@ -13,6 +13,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 
+use crate::crypto::verify_bid;
 use crate::job::{Bid, Message};
 use crate::submitter::{Submitter, SweepRequest};
 
@@ -42,7 +43,27 @@ pub fn router(state: GatewayState) -> Router {
 }
 
 /// Record a bid the node observed (from gossip), so the gateway can serve it.
+///
+/// OPQ-037: bids are gossiped/POSTed by untrusted peers, and the cache dedups by
+/// `(jobId, operator)` keeping the first seen. Without a check, a poisoned gateway (or any
+/// client) could pre-insert a forged bid under a victim operator with a bogus x25519 key and
+/// suppress that operator's genuine bid. We therefore verify the operator signature over
+/// `(jobId, x25519Pk)` before caching and drop bids whose signer != the claimed operator, so
+/// a forger can only ever occupy operator slots it actually controls.
+///
+/// This does NOT prove the operator is a *registered* relayer (that needs on-chain/RPC state
+/// the gateway lacks): gateway-served bids remain advisory and clients MUST re-verify the
+/// signature and registry membership before encrypting a payload (the SDK's `verifyBids`
+/// does exactly this).
 pub fn record_bid(bids: &Arc<Mutex<HashMap<String, Vec<Bid>>>>, bid: Bid) {
+    if !verify_bid(&bid) {
+        tracing::debug!(
+            "dropping bid with invalid signature for job {} (operator {})",
+            bid.job_id,
+            bid.operator
+        );
+        return;
+    }
     let mut map = bids.lock().unwrap();
     let entry = map.entry(bid.job_id.clone()).or_default();
     if !entry.iter().any(|b| b.operator == bid.operator) {
