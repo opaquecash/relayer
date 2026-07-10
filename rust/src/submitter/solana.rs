@@ -239,13 +239,22 @@ impl Submitter for SolanaSubmitter {
         let rpc = self.client();
         let sig = tokio::task::spawn_blocking(move || -> Result<String> {
             let bh = rpc.get_latest_blockhash()?;
-            let accept_tx =
-                Transaction::new_signed_with_payer(&[accept_ix], Some(&operator), &[&*keypair], bh);
-            rpc.send_and_confirm_transaction(&accept_tx)?;
-            let bh2 = rpc.get_latest_blockhash()?;
-            let submit_tx =
-                Transaction::new_signed_with_payer(&[submit_ix], Some(&operator), &[&*keypair], bh2);
-            Ok(rpc.send_and_confirm_transaction(&submit_tx)?.to_string())
+            // Bond and submit in ONE atomic transaction: if the inner CPI reverts, accept_job
+            // (the bond) reverts with it, so a reverting payload can never strand the bond for
+            // the creator to slash (OPQ-003). The two instructions ran as separate transactions
+            // before, leaving a bonded-but-un-submitted window a reverting payload could exploit.
+            let tx = Transaction::new_signed_with_payer(
+                &[accept_ix, submit_ix],
+                Some(&operator),
+                &[&*keypair],
+                bh,
+            );
+            // Pre-simulate so a doomed inner CPI fails fast, before paying even the base fee.
+            let sim = rpc.simulate_transaction(&tx)?;
+            if let Some(err) = sim.value.err {
+                return Err(anyhow!("inner CPI would revert; refusing to bond (OPQ-003): {err:?}"));
+            }
+            Ok(rpc.send_and_confirm_transaction(&tx)?.to_string())
         })
         .await??;
         Ok(sig)
@@ -299,5 +308,53 @@ impl Submitter for SolanaSubmitter {
         })
         .await??;
         Ok(sig)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Reference encoder for the box plaintext: `program ‖ u32(n) ‖ [pubkey ‖ writable]… ‖ u32(len) ‖ data`.
+    fn encode_descriptor(program: [u8; 32], accounts: &[([u8; 32], bool)], data: &[u8]) -> Vec<u8> {
+        let mut b = Vec::new();
+        b.extend_from_slice(&program);
+        b.extend_from_slice(&(accounts.len() as u32).to_le_bytes());
+        for (pk, w) in accounts {
+            b.extend_from_slice(pk);
+            b.push(*w as u8);
+        }
+        b.extend_from_slice(&(data.len() as u32).to_le_bytes());
+        b.extend_from_slice(data);
+        b
+    }
+
+    /// The pre-bond guard hashes the decoded descriptor and compares it to the on-chain
+    /// commitment; a faithful descriptor reproduces the hash and a tampered one does not (OPQ-003).
+    #[test]
+    fn decoded_descriptor_reproduces_commitment() {
+        let program = [3u8; 32];
+        let accounts = [([1u8; 32], true), ([2u8; 32], false)];
+        let data = vec![9u8, 8, 7];
+        let payload = encode_descriptor(program, &accounts, &data);
+
+        let (ix, hash_metas) = decode_descriptor(&payload).unwrap();
+        assert_eq!(ix.program_id.to_bytes(), program);
+        assert_eq!(ix.data, data);
+
+        let commitment = solana_payload_hash(&program, &hash_metas, &data);
+        assert_eq!(commitment, solana_payload_hash(&ix.program_id.to_bytes(), &hash_metas, &ix.data));
+
+        // Flipping an account's writable bit changes the commitment, so it would be rejected.
+        let tampered = [([1u8; 32], false), ([2u8; 32], false)];
+        let (_, tampered_metas) = decode_descriptor(&encode_descriptor(program, &tampered, &data)).unwrap();
+        assert_ne!(solana_payload_hash(&program, &tampered_metas, &data), commitment);
+    }
+
+    /// A truncated descriptor is a hard error, never a silently-empty instruction.
+    #[test]
+    fn truncated_descriptor_is_rejected() {
+        let payload = encode_descriptor([3u8; 32], &[([1u8; 32], true)], &[1, 2, 3]);
+        assert!(decode_descriptor(&payload[..payload.len() - 1]).is_err());
     }
 }

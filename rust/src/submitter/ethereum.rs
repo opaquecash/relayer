@@ -132,8 +132,37 @@ impl Submitter for EthereumSubmitter {
         // The box plaintext is abi.encode(address target, bytes data).
         let (target, data) = <(Address, Bytes)>::abi_decode_params(payload, true)
             .map_err(|e| anyhow!("payload is not abi.encode(address,bytes): {e}"))?;
+
+        // Validate the revealed payload BEFORE bonding: acceptJob and submitJob are separate
+        // transactions, so a payload that submitJob would revert on strands our bond for the
+        // creator to slash (OPQ-003). Mirror the registry's three submit-time guards here so a
+        // mismatched, self-targeting, or reverting payload is rejected without ever bonding.
+        let onchain = self.fetch_job(job_id).await?;
+        let local_hash = crate::job::evm_payload_hash(&target.into_array(), &data);
+        if local_hash != onchain.payload_hash {
+            // Guards against PayloadMismatch — including a third party gossiping a
+            // mismatched-but-ABI-valid boxed payload for someone else's honest job.
+            return Err(anyhow!("decoded payload does not match the job commitment"));
+        }
+        if target == self.registry {
+            // Guards against SelfTarget (the registry forbids target == address(this)).
+            return Err(anyhow!("payload targets the registry itself (SelfTarget)"));
+        }
+
         let c = contract!(self);
         let id = FixedBytes::from(*job_id);
+
+        // Simulate the inner call from the registry's context (msg.sender == registry, as the
+        // registry performs target.call(data)); only bond if it would not revert. This catches
+        // InnerCallFailed before acceptJob.
+        let sim = TransactionRequest::default()
+            .with_from(self.registry)
+            .with_to(target)
+            .with_input(data.clone());
+        c.provider()
+            .call(&sim)
+            .await
+            .map_err(|e| anyhow!("inner call would revert; refusing to bond (OPQ-003): {e}"))?;
 
         c.acceptJob(id).send().await?.watch().await?;
         let receipt = c.submitJob(id, target, data).send().await?.get_receipt().await?;
@@ -180,5 +209,32 @@ impl Submitter for EthereumSubmitter {
             "operator": self.operator(),
             "forwarder": self.forwarder.map(|f| format!("{f:?}")),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloy::primitives::address;
+
+    /// The pre-bond guard re-derives the commitment from the decoded box plaintext; a faithful
+    /// payload reproduces the job's payloadHash and a substituted target does not (OPQ-003).
+    #[test]
+    fn redecoded_payload_reproduces_commitment_and_detects_mismatch() {
+        let target = address!("00000000000000000000000000000000000000aa");
+        let data = Bytes::from(vec![0xde, 0xad, 0xbe, 0xef]);
+        let payload = (target, data.clone()).abi_encode_params();
+
+        // Round-trips through the same decode the submitter performs.
+        let (dt, dd) = <(Address, Bytes)>::abi_decode_params(&payload, true).unwrap();
+        assert_eq!(dt, target);
+        assert_eq!(dd, data);
+
+        let commitment = crate::job::evm_payload_hash(&target.into_array(), &data);
+        assert_eq!(commitment, crate::job::evm_payload_hash(&dt.into_array(), &dd));
+
+        // A relayer handed a different target for the same job must reject before bonding.
+        let other = address!("00000000000000000000000000000000000000bb");
+        assert_ne!(crate::job::evm_payload_hash(&other.into_array(), &dd), commitment);
     }
 }
